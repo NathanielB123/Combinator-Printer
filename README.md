@@ -3,12 +3,12 @@ Print out combinators!
 
 For example, if we have:
 ```hs
-foo :: forall a. (a -> a) -> (a -> (a -> a) -> a) -> ((a -> a) -> a) -> a -> a
+foo :: forall a b. (a -> a) -> (a -> (a -> a) -> a) -> b -> b -> a
 foo = \x y _ z -> y z (\w -> (x (x (y w (\_ -> x w)))))
 ```
 We can do:
 ```
->>> printCombinator (foo @Tree)
+>>> printCombinator (foo @Tree @Tree)
 \a b c d -> b d (\e -> a (a (b e (\f -> a e))))
 ```
 
