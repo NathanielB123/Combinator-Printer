@@ -9,7 +9,7 @@ foo = \x y _ z -> y z (\a -> (x (x (y a (\_ -> x a)))))
 We can do:
 ```
 >>> printCombinator (foo @Tree)
-(\a b c d -> b (d) (\e -> a (a (b (e) (\f -> a (e))))))
+\a b c d -> b d (\e -> a (a (b e (\f -> a e))))
 ```
 
 See Haddock documentation (generate with `cabal haddock`) or read the code - it's surprisingly short!
