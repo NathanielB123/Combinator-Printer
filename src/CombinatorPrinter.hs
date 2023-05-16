@@ -1,3 +1,6 @@
+{-# LANGUAGE PartialTypeSignatures #-}
+{-# OPTIONS_GHC -Wno-unused-top-binds #-}
+
 -- | Print out combinators!
 module CombinatorPrinter
   ( printCombinator
@@ -48,7 +51,7 @@ showCombinator :: CreateSTree f => f -> String
 showCombinator x = pretty . ereduce $ evalState (toL $ stree x) 0
 
 -- | Example combinator
-foo :: (p1 -> p1) -> (p1 -> (p1 -> p1) -> p1) -> p2 -> p1 -> p1
+foo :: forall p1 p2. (p1 -> p1) -> (p1 -> (p1 -> p1) -> p1) -> p2 -> p1 -> p1
 foo = \x y _ z -> y z (\w -> (x (x (y w (\_ -> x w)))))
 
 -- | Like `foo` but with all type variables instantiated to `Tree`
@@ -115,7 +118,7 @@ instance Pretty L where
       go ps (App l1 l2) =
         addParens ps $
         mwhen (wasLam ps) "-> " <> go NoParens l1 <> " " <> go Parens l2
-      go _ (Term x) = toChr x
+      go ps (Term x) = mwhen (wasLam ps) "-> " <> toChr x
 
 mwhen :: Monoid a => Bool -> a -> a
 mwhen True = id
@@ -151,14 +154,27 @@ occurIn i (App l1 l2) = occurIn i l1 || occurIn i l2
 -- but the additional code is very small
 occurIn i (Lam i' l) = i /= i' && occurIn i l
 
+apWhen :: (a -> a) -> Bool -> a -> a
+apWhen f True = f
+apWhen _ False = id
+
 -- | Reduce via eta reduction
 ereduce :: L -> L
-ereduce t@(Lam i (App l (Term i')))
-  | i == i' && not (occurIn i l) = ereduce l
-  | otherwise = t
-ereduce (Lam i l) = Lam i $ ereduce l
-ereduce (App l1 l2) = App (ereduce l1) (ereduce l2)
-ereduce t@Term {} = t
+ereduce = fst . go
+  where
+    go :: L -> (L, Bool)
+    go (Lam i (App l t@(Term i')))
+      | i == i' && not (occurIn i l) = (l', True)
+      | otherwise = (Lam i (App l' t), b)
+      where
+        (l', b) = go l
+    go (Lam i l) = apWhen (go . fst) b (Lam i l', False)
+      where
+        (l', b) = go l
+    go (App l1 l2) = (App (ereduce l1) l2', b)
+      where
+        (l2', b) = go l2
+    go t@Term {} = (t, False)
 
 -- | Reduce via beta reduction
 --
