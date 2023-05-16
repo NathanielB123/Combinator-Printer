@@ -2,8 +2,8 @@
 
 -- | Print out combinators!
 module CombinatorPrinter
-  ( printCombinator
-  , showCombinator
+  ( showCombinator
+  , printCombinator
   , foo
   , foo'
   , foo''
@@ -25,13 +25,6 @@ import Data.Char (chr, ord)
 import Data.Foldable (Foldable(..))
 import Data.List (intercalate)
 
--- | Print a combinator
---
--- This is useful in GHCI as when GHCI prints strings, it includes escape
--- characters (i.e: "\\" becomes "\\\\")
-printCombinator :: CreateSTree f => f -> IO ()
-printCombinator = putStrLn . showCombinator
-
 -- | Show a combinator
 --
 -- Specifically, this function allows printing any function with a type
@@ -48,6 +41,13 @@ printCombinator = putStrLn . showCombinator
 -- @26/"z"@. For example, appending numbers
 showCombinator :: CreateSTree f => f -> String
 showCombinator x = pretty . ereduce $ evalState (toL $ stree x) 0
+
+-- | Print a combinator
+--
+-- This is useful in GHCI as when GHCI prints strings, it includes escape
+-- characters (i.e: "\\" becomes "\\\\")
+printCombinator :: CreateSTree f => f -> IO ()
+printCombinator = putStrLn . showCombinator
 
 -- | Example combinator
 foo :: forall p1 p2. (p1 -> p1) -> (p1 -> (p1 -> p1) -> p1) -> p2 -> p1 -> p1
@@ -97,7 +97,7 @@ ereduce = fst . go
       | otherwise = (Lam i (App l' t), b)
       where
         (l', b) = go l
-    go (Lam i l) = apWhen (go . fst) b (Lam i l', False)
+    go (Lam i l) = apWhen b (go . fst) (Lam i l', False)
       where
         (l', b) = go l
     go (App l1 l2) = (App (ereduce l1) l2', b)
@@ -134,17 +134,16 @@ instance Pretty L where
   pretty :: L -> String
   pretty = go NoParens
     where
-      addParens Parens = parensEnclose
-      addParens _ = id
-      wasLam WasLam = True
-      wasLam _ = False
+      addParens ps = apWhen (needParens ps) parensEnclose
+      addArrow ps s = mwhen (wasLam ps) "-> " <> s
+      needParens = (Parens ==)
+      wasLam = (WasLam ==)
       go :: PrettyState -> L -> String
       go ps (Lam x l) =
         addParens ps $ munless (wasLam ps) "\\" <> toChr x <> " " <> go WasLam l
       go ps (App l1 l2) =
-        addParens ps $
-        mwhen (wasLam ps) "-> " <> go NoParens l1 <> " " <> go Parens l2
-      go ps (Term x) = mwhen (wasLam ps) "-> " <> toChr x
+        addParens ps . addArrow ps $ go NoParens l1 <> " " <> go Parens l2
+      go ps (Term x) = addArrow ps $ toChr x
 
 mwhen :: Monoid a => Bool -> a -> a
 mwhen True = id
@@ -152,6 +151,10 @@ mwhen False = const mempty
 
 munless :: Monoid c => Bool -> c -> c
 munless = mwhen . not
+
+apWhen :: Bool -> (a -> a) -> a -> a
+apWhen True = id
+apWhen False = const id
 
 toChr :: Int -> [Char]
 toChr i = [chr $ (i + ord 'a')]
@@ -179,10 +182,6 @@ occurIn i (App l1 l2) = occurIn i l1 || occurIn i l2
 -- for `L`s we create as we always guarantee variables will not share names,
 -- but the additional code is very small
 occurIn i (Lam i' l) = i /= i' && occurIn i l
-
-apWhen :: (a -> a) -> Bool -> a -> a
-apWhen f True = f
-apWhen _ False = id
 
 fresh :: State Int Int
 fresh = do
