@@ -12,4 +12,4 @@ We can do:
 (\a b c d -> b (d) (\e -> a (a (b (e) (\f -> a (e))))))
 ```
 
-See Haddock documentation (generate with `cabal haddock` or read the code - it's surprisingly short!
+See Haddock documentation (generate with `cabal haddock`) or read the code - it's surprisingly short!
