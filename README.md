@@ -4,7 +4,7 @@ Print out combinators!
 For example, if we have:
 ```hs
 foo :: forall a. (a -> a) -> (a -> (a -> a) -> a) -> ((a -> a) -> a) -> a -> a
-foo = \x y _ z -> y z (\a -> (x (x (y a (\_ -> x a)))))
+foo = \x y _ z -> y z (\w -> (x (x (y w (\_ -> x w)))))
 ```
 We can do:
 ```
