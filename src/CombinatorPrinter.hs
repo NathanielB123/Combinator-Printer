@@ -1,4 +1,3 @@
-{-# LANGUAGE PartialTypeSignatures #-}
 {-# OPTIONS_GHC -Wno-unused-top-binds #-}
 
 -- | Print out combinators!
@@ -88,6 +87,33 @@ data L
   | Term Int
   deriving (Show)
 
+-- | Reduce via eta reduction
+ereduce :: L -> L
+ereduce = fst . go
+  where
+    go :: L -> (L, Bool)
+    go (Lam i (App l t@(Term i')))
+      | i == i' && not (occurIn i l) = (l', True)
+      | otherwise = (Lam i (App l' t), b)
+      where
+        (l', b) = go l
+    go (Lam i l) = apWhen (go . fst) b (Lam i l', False)
+      where
+        (l', b) = go l
+    go (App l1 l2) = (App (ereduce l1) l2', b)
+      where
+        (l2', b) = go l2
+    go t@Term {} = (t, False)
+
+-- | Reduce via beta reduction
+--
+-- Not actually used
+breduce :: L -> L
+breduce t@Term {} = t
+breduce (Lam x l) = Lam x (breduce l)
+breduce (App (Lam x l) y) = breduce $ replaceIn x y l
+breduce (App l1 l2) = App (breduce l1) (breduce l2)
+
 -- | Pretty-printing
 class Pretty a where
   pretty :: a -> String
@@ -158,34 +184,6 @@ apWhen :: (a -> a) -> Bool -> a -> a
 apWhen f True = f
 apWhen _ False = id
 
--- | Reduce via eta reduction
-ereduce :: L -> L
-ereduce = fst . go
-  where
-    go :: L -> (L, Bool)
-    go (Lam i (App l t@(Term i')))
-      | i == i' && not (occurIn i l) = (l', True)
-      | otherwise = (Lam i (App l' t), b)
-      where
-        (l', b) = go l
-    go (Lam i l) = apWhen (go . fst) b (Lam i l', False)
-      where
-        (l', b) = go l
-    go (App l1 l2) = (App (ereduce l1) l2', b)
-      where
-        (l2', b) = go l2
-    go t@Term {} = (t, False)
-
--- | Reduce via beta reduction
---
--- Not actually used
-breduce :: L -> L
-breduce t@Term {} = t
-breduce (Lam x l) = Lam x (breduce l)
-breduce (App (Lam x l) y) = breduce $ replaceIn x y l
-breduce (App l1 l2) = App (breduce l1) (breduce l2)
-
--- We need to fold over r, turning the (:)s into Lams
 fresh :: State Int Int
 fresh = do
   x <- get
@@ -229,6 +227,69 @@ instance FillFun Tree where
 instance (CreateSTree f, FillFun g) => FillFun (f -> g) where
   fill :: ([STree] -> Tree) -> f -> g
   fill n f = fill @g $ \xs -> n (stree f : xs)
+
+--------------------------------------------------------------------------------
+-- Some More Example Combinators: Church Numerals
+--------------------------------------------------------------------------------
+type PolyChurch a = (a -> a) -> a -> a
+
+type Church = forall a. PolyChurch a
+
+zero :: Church
+zero = \_ x -> x
+
+one :: Church
+one = suc zero
+
+two :: Church
+two = suc one
+
+suc :: Church -> Church
+suc = \n f x -> n f (f x)
+
+add :: Church -> Church -> Church
+add = \n m f x -> n f (m f x)
+
+mul :: Church -> Church -> Church
+mul = \n m f x -> n (m f) x
+
+pow :: Church -> Church -> Church
+pow = \n m -> n m
+
+pre :: Church -> Church
+pre = \n f x -> n (\g h -> h (g f)) (\_ -> x) (\u -> u)
+
+ifz :: Church -> Church -> Church -> Church
+ifz = \n tr fa -> n (\_ -> tr) fa
+
+bar :: (Church -> Church) -> Church -> Church
+bar =
+  \f n ->
+    ifz
+      n
+      one
+      (ifz
+         (pre n)
+         one
+         (add (mul (f (pre (pre n))) (f (pre (pre n)))) (mul two (f (pre n)))))
+
+-- | We can redefine the above combinators to have foralls at the start...
+--
+-- ...making them printable!
+--
+-- >>> showCombinator (pre' @Tree)
+-- "\\a b c -> a (\\d e -> e (d b)) (\\g -> c) (\\h -> h)"
+pre' :: forall a. (PolyChurch ((a -> a) -> a)) -> PolyChurch a
+pre' = \n f x -> n (\g h -> h (g f)) (\_ -> x) (\u -> u)
+
+ifz' :: forall a. (PolyChurch a) -> a -> a -> a
+ifz' = \n tr fa -> n (\_ -> tr) fa
+
+mul' :: forall a. PolyChurch a -> PolyChurch a -> PolyChurch a
+mul' = \n m f x -> n (m f) x
+
+add' :: forall a. PolyChurch a -> PolyChurch a -> PolyChurch a
+add' = \n m f x -> n f (m f x)
 
 --------------------------------------------------------------------------------
 -- Old:
