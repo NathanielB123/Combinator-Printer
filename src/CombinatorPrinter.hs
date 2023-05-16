@@ -38,8 +38,7 @@ showCombinator x = evalState (showS $ stree x) 0
 foo :: (p1 -> p1) -> (p1 -> (p1 -> p1) -> p1) -> p2 -> p1 -> p1
 foo = \x y _ z -> y z (\w -> (x (x (y w (\_ -> x w)))))
 
--- | Version of the combinator with all type variables instantiated with
--- `Tree`
+-- | Like `foo` but with all type variables instantiated to `Tree`
 --
 -- >>> showCombinator foo'
 -- "(\\a b c d -> b (d) (\\e -> a (a (b (e) (\\f -> a (e))))))"
@@ -50,11 +49,11 @@ foo' = foo
 -- | What it says on the tin: a `Tree` to a `Tree`
 type T2T = Tree -> Tree
 
--- | We can instantiate the polymorphic variables with alternative types
+-- | We can instantiate the polymorphic type variables with alternative types
 -- containing just `(->)`s and `Tree`s. For example, "@Tree -> Tree@".
 --
 -- This will print a different (more complicated) combinator but still works
--- (and if we performed beta-reduction, I think it might print the same thing)
+-- (and if we performed beta-reduction, I think it would print the same thing)
 foo'' :: (T2T -> T2T) -> (T2T -> (T2T -> T2T) -> T2T) -> T2T -> T2T -> T2T
 foo'' = foo
 
@@ -71,6 +70,7 @@ munless True = const mempty
 munless False = id
 
 -- | Traverse the built-up tree and print the lambdas and applications
+--
 -- Some improvements could be made here for neater printing:
 --
 -- * Remove unncessary parens
