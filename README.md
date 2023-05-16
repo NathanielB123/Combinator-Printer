@@ -8,7 +8,7 @@ foo = \x y _ z -> y z (\a -> (x (x (y a (\_ -> x a)))))
 ```
 We can do:
 ```
->>> showCombinator (foo @Tree)
+>>> printCombinator (foo @Tree)
 (\a b c d -> b (d) (\e -> a (a (b (e) (\f -> a (e))))))
 ```
 
