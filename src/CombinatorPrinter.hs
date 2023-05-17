@@ -67,8 +67,8 @@ type T2T = Tree -> Tree
 -- | We can instantiate the polymorphic type variables with alternative types
 -- containing just `(->)`s and `Tree`s. For example, "@Tree -> Tree@".
 --
--- After performing `ereduce`-ing, we will obtain the same `L` and so will
--- print to the same combinator
+-- After `ereduce`-ing, we will obtain the same `L` and so will print to the 
+-- same combinator
 foo'' :: (T2T -> T2T) -> (T2T -> (T2T -> T2T) -> T2T) -> T2T -> T2T -> T2T
 foo'' = foo
 
@@ -253,24 +253,13 @@ mul :: Church -> Church -> Church
 mul = \n m f x -> n (m f) x
 
 pow :: Church -> Church -> Church
-pow = \n m -> n m
+pow = \n m -> m n
 
 pre :: Church -> Church
 pre = \n f x -> n (\g h -> h (g f)) (\_ -> x) (\u -> u)
 
 ifz :: Church -> Church -> Church -> Church
 ifz = \n tr fa -> n (\_ -> tr) fa
-
-bar :: (Church -> Church) -> Church -> Church
-bar =
-  \f n ->
-    ifz
-      n
-      one
-      (ifz
-         (pre n)
-         one
-         (add (mul (f (pre (pre n))) (f (pre (pre n)))) (mul two (f (pre n)))))
 
 -- | We can redefine the above combinators to have foralls at the start...
 --
@@ -290,13 +279,16 @@ mul' = \n m f x -> n (m f) x
 add' :: forall a. PolyChurch a -> PolyChurch a -> PolyChurch a
 add' = \n m f x -> n f (m f x)
 
+pow' :: forall a. a -> (a -> a) -> a
+pow' = \n m -> m n
+
 --------------------------------------------------------------------------------
 -- Old:
 --------------------------------------------------------------------------------
 -- | Traverse the built-up tree and print the lambdas and applications directly
 --
--- Lower quality output compare to using `toL` and `pretty` (more parens than
--- necessary)
+-- Lower quality output compared to using `toL` and `pretty` (more parens than
+-- necessary). Also no easy way to eta reduce.
 showS :: STree -> State Int String
 showS t = do
   cur <- get

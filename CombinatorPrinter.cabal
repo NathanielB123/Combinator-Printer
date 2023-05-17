@@ -26,13 +26,12 @@ common warnings
 
 library
   import:           warnings
-  exposed-modules:  CombinatorPrinter
+  exposed-modules:
+    CombinatorPrinter
+    ShowInstance
 
   -- Modules included in this library but not exported.
   -- other-modules:
-
-  -- LANGUAGE extensions used by modules in this package.
-  -- other-extensions:
 
   build-depends:
     , base  >=4.18.0.0
