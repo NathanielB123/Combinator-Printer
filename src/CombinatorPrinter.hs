@@ -76,9 +76,9 @@ foo'' :: (T2T -> T2T) -> (T2T -> (T2T -> T2T) -> T2T) -> T2T -> T2T -> T2T
 foo'' = foo
 
 -- | A rose tree, used to observe the structure of the combinator (each node is
--- an application of a variable to @n@ other variables), containing a list of 
--- @n@ stateful monadic computations which track which variables have been
--- brought into scope
+-- an application of a variable to @n@ other expressions), containing a list of 
+-- @n@ stateful computations which track which variables have been brought into
+-- scope
 data Tree =
   Node Int [STree]
 
@@ -123,7 +123,7 @@ class Pretty a where
   pretty :: a -> String
 
 enclose :: String -> String -> String -> String
-enclose l r s = l <> s <> r
+enclose l r s = mconcat [l, s, r]
 
 parensEnclose :: String -> String
 parensEnclose = enclose "(" ")"
@@ -142,7 +142,6 @@ instance Pretty L where
       addArrow ps s = mwhen (wasLam ps) "-> " <> s
       needParens = (Parens ==)
       wasLam = (WasLam ==)
-      go :: PrettyState -> L -> String
       go ps (Lam x l) =
         addParens ps $ munless (wasLam ps) "\\" <> toChr x <> " " <> go WasLam l
       go ps (App l1 l2) =
@@ -180,14 +179,14 @@ occurIn :: Int -> L -> Bool
 occurIn i (Var i') = i == i'
 occurIn i (App l1 l2) = occurIn i l1 || occurIn i l2
 -- Technically, we don't need to check the name of the bound variable here
--- for `L`s we create as we always guarantee variables will not share names,
--- but the additional code is very small
+-- for `L`s we create as we guarantee by construction that variables will not
+-- be shadowed, but the cost is low
 occurIn i (Lam i' l) = i /= i' && occurIn i l
 
 -- | Creates a fresh identifier
 --
 -- Arguably a more limited `Monad` that full-on `State` would be "cleaner" to
--- use here to prevent misuse
+-- use here (would prevent misuse)
 fresh :: State Int Int
 fresh = do
   x <- get
@@ -198,7 +197,8 @@ data WithFreshes a =
   a `With` [Int]
 
 -- | Runs a stateful computation, and returns a list of all the fresh values
--- that were generated during it
+-- that were generated during it (assuming no state-modifying function other
+-- than `fresh` was called)
 withFreshes :: State Int a -> State Int (WithFreshes a)
 withFreshes f = do
   cur <- get
@@ -206,7 +206,8 @@ withFreshes f = do
   new <- get
   pure $ x `With` [cur .. new - 1]
 
--- | Creates a new constructor (given a new unique identifier via `fresh`)
+-- | Creates a new variable/constructor (given a new unique identifier via 
+-- `fresh`)
 genNode :: State Int ([STree] -> Tree)
 genNode = Node <$> fresh
 
