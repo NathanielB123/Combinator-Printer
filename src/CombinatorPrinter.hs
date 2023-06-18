@@ -43,6 +43,11 @@ import Data.Monoid (Endo(..))
 --
 -- * Introduce some mechanism to keep creating unique valid variable names past 
 -- @26/"z"@. For example, appending numbers
+--
+-- * Offer an alternative show function which takes a dictionary of known
+-- combinators  (@Map String L@) and prints the output in terms of them (i.e: by
+-- checking sub-trees of the generated `L` for alpha equivalence). This would
+-- provide a really nice interface for doing arithmetric on `Church` numerals
 showCombinator :: CreateSTree f => f -> String
 showCombinator x = pretty . ereduce $ evalState (toL $ stree x) 0
 
@@ -112,7 +117,8 @@ ereduce = fst . go
 
 -- | Reduce via beta reduction
 --
--- Not actually used
+-- Not actually used - beta reduction is perfomed automatically by the
+-- combinator getting evaluated 
 breduce :: L -> L
 breduce t@Var {} = t
 breduce (Lam x l) = Lam x (breduce l)
