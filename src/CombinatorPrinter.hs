@@ -72,19 +72,20 @@ type T2T = Tree -> Tree
 foo'' :: (T2T -> T2T) -> (T2T -> (T2T -> T2T) -> T2T) -> T2T -> T2T -> T2T
 foo'' = foo
 
--- | `Tree` wrapped in state monad to track the next available ID to use for
--- the next `Node`
-type STree = State Int Tree
-
--- | A simple recursive tree, used to observe the structure of the combinator
+-- | A rose tree, used to observe the structure of the combinator, containing
+-- stateful monadic computations which track the next available ID to use 
+-- for the next `Var`
 data Tree =
   Node Int [STree]
+
+-- | A 'Tree' wrapped in State monad
+type STree = State Int Tree
 
 -- | Simple lambda calculus AST
 data L
   = Lam Int L
   | App L L
-  | Term Int
+  | Var Int
   deriving (Show)
 
 -- | Reduce via eta reduction
@@ -92,7 +93,7 @@ ereduce :: L -> L
 ereduce = fst . go
   where
     go :: L -> (L, Bool)
-    go (Lam i (App l t@(Term i')))
+    go (Lam i (App l t@(Var i')))
       | i == i' && not (occurIn i l) = (l', True)
       | otherwise = (Lam i (App l' t), b)
       where
@@ -103,13 +104,13 @@ ereduce = fst . go
     go (App l1 l2) = (App (ereduce l1) l2', b)
       where
         (l2', b) = go l2
-    go t@Term {} = (t, False)
+    go t@Var {} = (t, False)
 
 -- | Reduce via beta reduction
 --
 -- Not actually used
 breduce :: L -> L
-breduce t@Term {} = t
+breduce t@Var {} = t
 breduce (Lam x l) = Lam x (breduce l)
 breduce (App (Lam x l) y) = breduce $ replaceIn x y l
 breduce (App l1 l2) = App (breduce l1) (breduce l2)
@@ -143,7 +144,7 @@ instance Pretty L where
         addParens ps $ munless (wasLam ps) "\\" <> toChr x <> " " <> go WasLam l
       go ps (App l1 l2) =
         addParens ps . addArrow ps $ go NoParens l1 <> " " <> go Parens l2
-      go ps (Term x) = addArrow ps $ toChr x
+      go ps (Var x) = addArrow ps $ toChr x
 
 mwhen :: Monoid a => Bool -> a -> a
 mwhen True = id
@@ -166,17 +167,17 @@ toL t = do
   (Node i xs) <- t
   new <- get
   xs' <- traverse toL xs
-  pure $ foldr Lam (foldl' App (Term i) xs') [cur .. new -1]
+  pure $ foldr Lam (foldl' App (Var i) xs') [cur .. new - 1]
 
 replaceIn :: Int -> L -> L -> L
-replaceIn x y t@(Term x')
+replaceIn x y t@(Var x')
   | x == x' = y
   | otherwise = t
 replaceIn x y (Lam i l) = Lam i $ replaceIn x y l
 replaceIn x y (App l1 l2) = App (replaceIn x y l1) (replaceIn x y l2)
 
 occurIn :: Int -> L -> Bool
-occurIn i (Term i') = i == i'
+occurIn i (Var i') = i == i'
 occurIn i (App l1 l2) = occurIn i l1 || occurIn i l2
 -- Technically, we don't need to check the name of the bound variable here
 -- for `L`s we create as we always guarantee variables will not share names,
@@ -296,7 +297,9 @@ showS t = do
   new <- get
   xs' <- traverse showS xs
   let r = [cur .. new - 1]
-  pure $
-    "(" <>
-    munless (null r) ("\\" <> intercalate " " (fmap toChr r) <> " -> ") <>
-    toChr i <> munless (null xs') (" " <> intercalate " " xs') <> ")"
+  pure
+    $ "("
+        <> munless (null r) ("\\" <> intercalate " " (fmap toChr r) <> " -> ")
+        <> toChr i
+        <> munless (null xs') (" " <> intercalate " " xs')
+        <> ")"
