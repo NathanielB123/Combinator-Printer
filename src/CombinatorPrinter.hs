@@ -18,6 +18,7 @@ module CombinatorPrinter
   , breduce
   , ereduce
   , showS
+  , fresh
   ) where
 
 import Control.Monad.State (MonadState(..), State, evalState)
@@ -183,6 +184,10 @@ occurIn i (App l1 l2) = occurIn i l1 || occurIn i l2
 -- but the additional code is very small
 occurIn i (Lam i' l) = i /= i' && occurIn i l
 
+-- | Creates a fresh identifier
+--
+-- Arguably a more limited `Monad` that full-on `State` would be "cleaner" to
+-- use here to prevent misuse
 fresh :: State Int Int
 fresh = do
   x <- get
