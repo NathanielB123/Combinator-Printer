@@ -22,8 +22,10 @@ module CombinatorPrinter
 
 import Control.Monad.State (MonadState(..), State, evalState)
 import Data.Char (chr, ord)
+import Data.Coerce (coerce)
 import Data.Foldable (Foldable(..))
 import Data.List (intercalate)
+import Data.Monoid (Endo(..))
 
 -- | Show a combinator
 --
@@ -72,9 +74,10 @@ type T2T = Tree -> Tree
 foo'' :: (T2T -> T2T) -> (T2T -> (T2T -> T2T) -> T2T) -> T2T -> T2T -> T2T
 foo'' = foo
 
--- | A rose tree, used to observe the structure of the combinator, containing
--- stateful monadic computations which track the next available ID to use 
--- for the next `Var`
+-- | A rose tree, used to observe the structure of the combinator (each node is
+-- an application of a variable to @n@ other variables), containing a list of 
+-- @n@ stateful monadic computations which track which variables have been
+-- brought into scope
 data Tree =
   Node Int [STree]
 
@@ -92,7 +95,6 @@ data L
 ereduce :: L -> L
 ereduce = fst . go
   where
-    go :: L -> (L, Bool)
     go (Lam i (App l t@(Var i')))
       | i == i' && not (occurIn i l) = (l', True)
       | otherwise = (Lam i (App l' t), b)
@@ -153,9 +155,8 @@ mwhen False = const mempty
 munless :: Monoid c => Bool -> c -> c
 munless = mwhen . not
 
-apWhen :: Bool -> (a -> a) -> a -> a
-apWhen True = id
-apWhen False = const id
+apWhen :: forall a. Bool -> (a -> a) -> a -> a
+apWhen = coerce $ mwhen @(Endo a)
 
 toChr :: Int -> [Char]
 toChr i = [chr $ (i + ord 'a')]
@@ -163,11 +164,9 @@ toChr i = [chr $ (i + ord 'a')]
 -- | Traverse the built-up tree and convert into the lambda calculus ADT `L`
 toL :: STree -> State Int L
 toL t = do
-  cur <- get
-  (Node i xs) <- t
-  new <- get
+  Node i xs `With` r <- withFreshes t
   xs' <- traverse toL xs
-  pure $ foldr Lam (foldl' App (Var i) xs') [cur .. new - 1]
+  pure $ foldr Lam (foldl' App (Var i) xs') r
 
 replaceIn :: Int -> L -> L -> L
 replaceIn x y t@(Var x')
@@ -190,6 +189,19 @@ fresh = do
   put $ succ x
   pure x
 
+data WithFreshes a =
+  a `With` [Int]
+
+-- | Runs a stateful computation, and returns a list of all the fresh values
+-- that were generated during it
+withFreshes :: State Int a -> State Int (WithFreshes a)
+withFreshes f = do
+  cur <- get
+  x <- f
+  new <- get
+  pure $ x `With` [cur .. new - 1]
+
+-- | Creates a new constructor (given a new unique identifier via `fresh`)
 genNode :: State Int ([STree] -> Tree)
 genNode = Node <$> fresh
 
@@ -226,7 +238,7 @@ instance FillFun Tree where
 
 instance (CreateSTree f, FillFun g) => FillFun (f -> g) where
   fill :: ([STree] -> Tree) -> f -> g
-  fill n f = fill @g $ \xs -> n (stree f : xs)
+  fill n f = fill $ n . (stree f :)
 
 --------------------------------------------------------------------------------
 -- Some More Example Combinators: Church Numerals
@@ -292,14 +304,13 @@ pow' = \n m -> m n
 -- necessary). Also no easy way to eta reduce.
 showS :: STree -> State Int String
 showS t = do
-  cur <- get
-  (Node i xs) <- t
-  new <- get
+  Node i xs `With` r <- withFreshes t
   xs' <- traverse showS xs
-  let r = [cur .. new - 1]
   pure
-    $ "("
-        <> munless (null r) ("\\" <> intercalate " " (fmap toChr r) <> " -> ")
-        <> toChr i
-        <> munless (null xs') (" " <> intercalate " " xs')
-        <> ")"
+    $ mconcat
+        [ "("
+        , munless (null r) ("\\" <> intercalate " " (fmap toChr r) <> " -> ")
+        , toChr i
+        , munless (null xs') (" " <> intercalate " " xs')
+        , ")"
+        ]
