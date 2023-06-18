@@ -1,4 +1,5 @@
 {-# OPTIONS_GHC -Wno-unused-top-binds #-}
+{-# LANGUAGE ImpredicativeTypes #-}
 
 -- | Print out combinators!
 module CombinatorPrinter
@@ -249,9 +250,7 @@ instance (CreateSTree f, FillFun g) => FillFun (f -> g) where
 --------------------------------------------------------------------------------
 -- Some More Example Combinators: Church Numerals
 --------------------------------------------------------------------------------
-type PolyChurch a = (a -> a) -> a -> a
-
-type Church = forall a. PolyChurch a
+type Church = forall a. (a -> a) -> a -> a
 
 zero :: Church
 zero = \_ x -> x
@@ -277,29 +276,53 @@ pow = \n m -> m n
 pre :: Church -> Church
 pre = \n f x -> n (\g h -> h (g f)) (\_ -> x) (\u -> u)
 
+sub :: Church -> Church -> Church
+sub = \m n -> (n pre) m
+
 ifz :: Church -> Church -> Church -> Church
 ifz = \n tr fa -> n (\_ -> tr) fa
 
--- | We can redefine the above combinators to have foralls at the start...
+-- | We can let GHC to infer type signatures for these combinators, moving the
+-- @forall@s to the start...
 --
 -- ...making them printable!
 --
--- >>> showCombinator (pre' @Tree)
--- "\\a b c -> a (\\d e -> e (d b)) (\\g -> c) (\\h -> h)"
-pre' :: forall a. (PolyChurch ((a -> a) -> a)) -> PolyChurch a
+-- >>> showCombinator (sub' @Tree @Tree @Tree @Tree @Tree @Tree @Tree @Tree @Tree)
+-- "\\a b -> b (\\c d e -> c (\\f g -> g (f d)) (\\h -> e) (\\i -> i)) a"
+--
+-- This doesn't work fully in general. Some combinators may actually rely on
+-- impredicativity which the `CreateSTree` class cannot handle, but it's still
+-- pretty cool IMO.
+sub' ::
+     forall t1 t2 t3 t4 t5 t6 p1 p2 p3.
+     t1
+  -> (((((t2 -> t3) -> (t3 -> t4) -> t4) -> (p1 -> p2) -> (p3 -> p3) -> t5) -> t2 -> p2 -> t5) -> t1 -> t6)
+  -> t6
+sub' = \m n -> (n pre') m
+
+pre' ::
+     forall t1 t2 t3 t4 p1 p2 p3.
+     (((t1 -> t2) -> (t2 -> t3) -> t3) -> (p1 -> p2) -> (p3 -> p3) -> t4)
+  -> t1
+  -> p2
+  -> t4
 pre' = \n f x -> n (\g h -> h (g f)) (\_ -> x) (\u -> u)
 
-ifz' :: forall a. (PolyChurch a) -> a -> a -> a
+ifz' :: forall p1 p2 t1 t2. ((p1 -> p2) -> t1 -> t2) -> p2 -> t1 -> t2
 ifz' = \n tr fa -> n (\_ -> tr) fa
 
-mul' :: forall a. PolyChurch a -> PolyChurch a -> PolyChurch a
+mul' :: forall t1 t2 t3 t4. (t1 -> t2 -> t3) -> (t4 -> t1) -> t4 -> t2 -> t3
 mul' = \n m f x -> n (m f) x
 
-add' :: forall a. PolyChurch a -> PolyChurch a -> PolyChurch a
+add' ::
+     forall t1 t2 t3 t4. (t1 -> t2 -> t3) -> (t1 -> t4 -> t2) -> t1 -> t4 -> t3
 add' = \n m f x -> n f (m f x)
 
-pow' :: forall a. a -> (a -> a) -> a
+pow' :: forall t1 t2. t1 -> (t1 -> t2) -> t2
 pow' = \n m -> m n
+
+suc' :: forall t1 t2 t3. ((t1 -> t2) -> t2 -> t3) -> (t1 -> t2) -> t1 -> t3
+suc' = \n f x -> n f (f x)
 
 --------------------------------------------------------------------------------
 -- Old:
