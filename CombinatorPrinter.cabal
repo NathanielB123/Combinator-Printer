@@ -34,8 +34,11 @@ library
   -- other-modules:
 
   build-depends:
-    , base  >=4.18.0.0
-    , mtl   >=2.2.2
+    , base         >=4.18.0.0
+    , composition  >=1.0.2.2
+    , containers   >=0.6.7
+    , mtl          >=2.2.2
+    , utility-ht   >=0.0.17
 
   hs-source-dirs:   src
   default-language: GHC2021

@@ -1,7 +1,25 @@
 {-# OPTIONS_GHC -Wno-unused-top-binds #-}
 {-# LANGUAGE ImpredicativeTypes #-}
+{-# LANGUAGE OverloadedLists #-}
+{-# LANGUAGE BlockArguments #-}
 
 -- | Print out combinators!
+--
+-- Possible future improvements for neater printing:
+--
+-- * Replace unused variables with "@_@" instead of giving them explicit names
+--
+-- * Introduce some mechanism to keep creating unique valid variable names past 
+-- @26/"z"@. For example, appending numbers
+--
+-- * Improve `showCombInTermsOf`. For example, have some way for it to handle
+-- infinitely large contexts (say all natural numbers instead of just @[0..100]@
+-- ), make it more efficient generally, or allow it to eta-expand to reveal
+-- otherwise hidden structure (i.e: currently, if the context contains `one` and
+-- `suc` @suc one@ will still print as "@\\a b -> a (a b)@"). Making these
+-- improvements is likely to be quite challenging (I am unsure if there actually
+-- exist good solutions), but I think also would be quite interesting to attempt
+-- ).
 module CombinatorPrinter
   ( showCombinator
   , printCombinator
@@ -14,20 +32,30 @@ module CombinatorPrinter
   , CreateSTree(..)
   , FillFun(..)
   , toL
-  , Pretty(..)
+  , PrettyR(..)
+  , pretty
   , L
   , breduce
   , ereduce
   , showS
   , fresh
+  , showCombInTermsOf
+  , one
+  , suc
+  , Church
   ) where
 
+import Control.Monad.Reader (MonadReader(..), Reader, asks, runReader)
 import Control.Monad.State (MonadState(..), State, evalState)
 import Data.Char (chr, ord)
 import Data.Coerce (coerce)
+import Data.Composition ((.:))
 import Data.Foldable (Foldable(..))
+import Data.Function.HT (nest)
 import Data.List (intercalate)
+import Data.Map (Map, (!), (!?), fromList, insert)
 import Data.Monoid (Endo(..))
+import Data.Ord (comparing)
 
 -- | Show a combinator
 --
@@ -36,20 +64,8 @@ import Data.Monoid (Endo(..))
 --
 -- Arbitrary combinators can be transformed into this form be simply 
 -- instantiating every type variable with `Tree`
---
--- Possible future improvements for neater printing:
---
--- * Replace unused variables with "@_@" instead of giving them explicit names
---
--- * Introduce some mechanism to keep creating unique valid variable names past 
--- @26/"z"@. For example, appending numbers
---
--- * Offer an alternative show function which takes a dictionary of known
--- combinators  (@Map String L@) and prints the output in terms of them (i.e: by
--- checking sub-trees of the generated `L` for alpha equivalence). This would
--- provide a really nice interface for doing arithmetric on `Church` numerals
 showCombinator :: CreateSTree f => f -> String
-showCombinator x = pretty . ereduce $ evalState (toL $ stree x) 0
+showCombinator = pretty . toReducedL
 
 -- | Print a combinator
 --
@@ -57,6 +73,15 @@ showCombinator x = pretty . ereduce $ evalState (toL $ stree x) 0
 -- characters (i.e: "\\" becomes "\\\\")
 printCombinator :: CreateSTree f => f -> IO ()
 printCombinator = putStrLn . showCombinator
+
+type CombCtx = Map L String
+
+-- | Show a combinator in terms of a context of other named combinators
+showCombInTermsOf :: CreateSTree f => Map L String -> f -> String
+showCombInTermsOf m = (`runReader` m) . prettyR . toReducedL
+
+toReducedL :: CreateSTree f => f -> L
+toReducedL x = ereduce $ evalState (toL $ stree x) 0
 
 -- | Example combinator
 foo :: forall p1 p2. (p1 -> p1) -> (p1 -> (p1 -> p1) -> p1) -> p2 -> p1 -> p1
@@ -125,9 +150,33 @@ breduce (Lam x l) = Lam x (breduce l)
 breduce (App (Lam x l) y) = breduce $ replaceIn x y l
 breduce (App l1 l2) = App (breduce l1) (breduce l2)
 
--- | Pretty-printing
-class Pretty a where
-  pretty :: a -> String
+-- | Check for alpha-equivalence
+aequiv :: L -> L -> Bool
+aequiv = (`runReader` []) .: go
+  where
+    -- The `Map` maps variables from the first `L` to the second
+    go (Var x) (Var y) = asks $ (y ==) . (! x)
+    go (Lam x l1) (Lam y l2) = local (insert x y) $ go l1 l2
+    go (App l1 l2) (App l3 l4) = (&&) <$> go l1 l3 <*> go l2 l4
+    go _ _ = pure False
+
+-- | Equality up to alpha-equivalence
+instance Eq L where
+  (==) = aequiv
+
+instance Ord L where
+  compare :: L -> L -> Ordering
+  compare = (`runReader` []) .: go
+    where
+      conId :: L -> Int
+      conId Lam {} = 0
+      conId App {} = 1
+      conId Var {} = 2
+      -- ^ Ids for constructors, giving a lexicographic ordering
+      go (Var x) (Var y) = asks $ (compare y) . (! x)
+      go (Lam x l1) (Lam y l2) = local (insert x y) $ go l1 l2
+      go (App l1 l2) (App l3 l4) = compare <$> (go l1 l3) <*> (go l2 l4)
+      go x y = pure $ comparing conId x y
 
 enclose :: String -> String -> String -> String
 enclose l r s = mconcat [l, s, r]
@@ -141,19 +190,40 @@ data PrettyState
   | Parens
   deriving (Eq)
 
-instance Pretty L where
-  pretty :: L -> String
-  pretty = go NoParens
+instance PrettyR () L where
+  prettyR :: L -> Reader () String
+  prettyR = pure . (`runReader` []) . prettyR @(Map L String)
+
+-- | Pretty-printing
+pretty :: PrettyR () a => a -> String
+pretty = (`runReader` ()) . prettyR
+
+-- | Pretty-printing with a context
+class PrettyR r a where
+  prettyR :: a -> Reader r String
+
+instance PrettyR (Map L String) L where
+  prettyR :: L -> Reader (Map L String) String
+  prettyR = go NoParens
     where
       addParens ps = apWhen (needParens ps) parensEnclose
       addArrow ps s = mwhen (wasLam ps) "-> " <> s
       needParens = (Parens ==)
       wasLam = (WasLam ==)
-      go ps (Lam x l) =
-        addParens ps $ munless (wasLam ps) "\\" <> toChr x <> " " <> go WasLam l
-      go ps (App l1 l2) =
-        addParens ps . addArrow ps $ go NoParens l1 <> " " <> go Parens l2
-      go ps (Var x) = addArrow ps $ toChr x
+      go ps x = do
+        m <- ask
+        case m !? x of
+          Just s -> pure s
+          Nothing -> go' ps x
+      go' ps (Lam x l) = do
+        l' <- go WasLam l
+        pure . addParens ps
+          $ mconcat [munless (wasLam ps) "\\", toChr x, " ", l']
+      go' ps (App l1 l2) = do
+        l1' <- go NoParens l1
+        l2' <- go Parens l2
+        pure . addParens ps . addArrow ps $ mconcat [l1', " ", l2']
+      go' ps (Var x) = pure . addArrow ps $ toChr x
 
 mwhen :: Monoid a => Bool -> a -> a
 mwhen True = id
@@ -256,17 +326,20 @@ instance (CreateSTree f, FillFun g) => FillFun (f -> g) where
 --------------------------------------------------------------------------------
 -- Some More Example Combinators: Church Numerals
 --------------------------------------------------------------------------------
+-- | Church numeral
 type Church = forall a. (a -> a) -> a -> a
 
 zero :: Church
 zero = \_ x -> x
 
+-- | The Church numeral representing the natural number "@1@"
 one :: Church
 one = suc zero
 
 two :: Church
 two = suc one
 
+-- | The successor of a Church numeral
 suc :: Church -> Church
 suc = \n f x -> n f (f x)
 
@@ -329,6 +402,18 @@ pow' = \n m -> m n
 
 suc' :: forall t1 t2 t3. ((t1 -> t2) -> t2 -> t3) -> (t1 -> t2) -> t1 -> t3
 suc' = \n f x -> n f (f x)
+
+-- | We can use `showCombInTermsOf` to print simplified output for larger
+-- combinators
+--
+-- >>> showCombInTermsOf numCtx $ ((two `pow` suc two) :: Church) @Tree
+-- "8"
+numCtx :: CombCtx
+numCtx = createNumCtx [0 .. 100]
+  where
+    createNumCtx :: [Int] -> CombCtx
+    createNumCtx =
+      fromList . fmap (\n -> (toReducedL $ nest n suc zero @Tree, show n))
 
 --------------------------------------------------------------------------------
 -- Old:
