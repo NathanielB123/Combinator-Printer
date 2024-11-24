@@ -148,7 +148,7 @@ breduce :: L -> L
 breduce t@Var {} = t
 breduce (Lam x l) = Lam x (breduce l)
 breduce (App (Lam x l) y) = breduce $ replaceIn x y l
-breduce (App l1 l2) = App (breduce l1) (breduce l2)
+breduce (App l1 l2) = breduce l1 `App` breduce l2
 
 -- | Check for alpha-equivalence
 aequiv :: L -> L -> Bool
@@ -185,9 +185,10 @@ parensEnclose :: String -> String
 parensEnclose = enclose "(" ")"
 
 data PrettyState
-  = WasLam
-  | NoParens
-  | Parens
+  = Start
+  | Body
+  | Lhs
+  | Rhs
   deriving (Eq)
 
 instance PrettyR () L where
@@ -204,25 +205,24 @@ class PrettyR r a where
 
 instance PrettyR (Map L String) L where
   prettyR :: L -> Reader (Map L String) String
-  prettyR = go NoParens
+  prettyR = go Start
     where
-      addParens ps = apWhen (needParens ps) parensEnclose
-      addArrow ps s = mwhen (wasLam ps) "-> " <> s
-      needParens = (Parens ==)
-      wasLam = (WasLam ==)
+      addParens b = apWhen b parensEnclose
+      isBody = (Body ==)
+      addArrow ps s = mwhen (isBody ps) "-> " <> s
       go ps x = do
         m <- ask
         case m !? x of
           Just s -> pure s
           Nothing -> go' ps x
       go' ps (Lam x l) = do
-        l' <- go WasLam l
-        pure . addParens ps
-          $ mconcat [munless (wasLam ps) "\\", toChr x, " ", l']
+        l' <- go Body l
+        pure . addParens (elem @[] ps [Lhs, Rhs])
+          $ mconcat [munless (isBody ps) "\\", toChr x, " ", l']
       go' ps (App l1 l2) = do
-        l1' <- go NoParens l1
-        l2' <- go Parens l2
-        pure . addParens ps . addArrow ps $ mconcat [l1', " ", l2']
+        l1' <- go Lhs l1
+        l2' <- go Rhs l2
+        pure . addParens (ps == Rhs) . addArrow ps $ mconcat [l1', " ", l2']
       go' ps (Var x) = pure . addArrow ps $ toChr x
 
 mwhen :: Monoid a => Bool -> a -> a
